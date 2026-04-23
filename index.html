@@ -1,33 +1,240 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>cami.site</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>cami.pics</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     html, body {
-      height: 100%;
+      background: #000;
+      overflow-x: hidden;
     }
 
-    body {
+    #gallery {
       display: flex;
-      justify-content: center;
-      align-items: center;
+      align-items: flex-start;
+      gap: 1.5vw;
+      padding: 0 1.5vw 18vh;
     }
 
-    p {
-      font-family: sans-serif;
-      font-size: 1rem;
+    .col {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5vw;
+    }
+
+    .photo-card {
+      cursor: pointer;
+      will-change: transform;
+    }
+
+    .photo-card img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    #site-title {
+      position: fixed;
+      top: 1.5vw;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 100;
+      pointer-events: auto;
+      cursor: pointer;
+      padding: 0.25em 0.55em;
+      white-space: nowrap;
+      font-family: Helvetica, Arial, sans-serif;
+      font-size: min(2.8vh, 4vw);
+      color: #fff;
     }
   </style>
 </head>
 <body>
-  <p>camis.pics</p>
+  <div id="site-title" onclick="location.reload()">cami.pics</div>
+  <main id="gallery"></main>
+  <script>
+    const gallery = document.getElementById('gallery');
+    const BATCH   = 5;
+
+    let queue = [], loaded = 0, busy = false;
+    let allCards = [];
+    let zBase = 9000;
+
+    const ratio    = window.innerWidth / window.innerHeight;
+    const colCount = ratio >= 2.2 ? 4 : ratio >= 1.5 ? 3 : 2;
+
+    const cols = Array.from({ length: colCount }, () => {
+      const col = document.createElement('div');
+      col.className = 'col';
+      gallery.appendChild(col);
+      return col;
+    });
+    function shortestCol() {
+      return cols.reduce((best, col, i) =>
+        col.scrollHeight < cols[best].scrollHeight ? i : best, 0);
+    }
+
+    function seededShuffle(arr, seed) {
+      let s = seed >>> 0;
+      function rand() {
+        s = (s + 0x6D2B79F5) >>> 0;
+        let t = Math.imul(s ^ (s >>> 15), 1 | s);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      }
+      const a = arr.slice();
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(rand() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
+    function rnd(min, max) { return min + Math.random() * (max - min); }
+    function easeOut(t)    { return 1 - Math.pow(1 - t, 3); }
+
+    function loadBatch() {
+      if (busy || loaded >= queue.length) return;
+      busy = true;
+      queue.slice(loaded, loaded + BATCH).forEach(photo => {
+        const card      = document.createElement('div');
+        card.className  = 'photo-card';
+        card.style.zIndex = zBase--;
+        const colIdx    = shortestCol();
+        card._colIdx    = colIdx;
+        card._row       = Math.floor(allCards.length / colCount);
+        const sign      = Math.random() > 0.5 ? 1 : -1;
+        card._baseRot   = sign * rnd(40, 75);
+
+        const img   = document.createElement('img');
+        img.src     = photo.url;
+        img.alt     = '';
+        img.loading = 'lazy';
+        card.appendChild(img);
+        card.addEventListener('click', () => window.open(photo.url, '_blank'));
+
+        cols[colIdx].appendChild(card);
+        allCards.push(card);
+      });
+      loaded += BATCH;
+      busy = false;
+      checkFill();
+    }
+
+    // ── animation loop ───────────────────────────────────────────────
+    //
+    // Row-based scroll-driven entrance:
+    //   - All cards in the same row share one reference Y → they move in sync
+    //   - Born at (gallery center, viewport bottom), arrive at natural column position
+    //
+    // Phases (driven by progress p ∈ [0,1]):
+    //   p=0   → born: card at viewport bottom + gallery center, random rotation, scale 0.6
+    //   p≈0.6 → rotation fully corrected to 0° (at screen bottom ¼)
+    //   p=1   → max size (scale 1), rotation 0, at natural position (screen center ½)
+    //   above → stays at identity transform until off top of screen
+
+    const siteTitle = document.getElementById('site-title');
+
+    function setGalleryTop() {
+      const gap = window.innerWidth * 0.015; // 1.5vw in px
+      gallery.style.paddingTop = (siteTitle.getBoundingClientRect().bottom + gap) + 'px';
+    }
+    setGalleryTop();
+    window.addEventListener('resize', setGalleryTop);
+
+    function tick() {
+      const sy     = window.scrollY;
+      const vh     = window.innerHeight;
+      const gw     = gallery.offsetWidth;
+      const colW   = gw / colCount;
+      const galTop = gallery.offsetTop;
+
+      // ── title fade ──
+      const fadeProg  = Math.min(1, sy / (vh * 0.35));
+      const textAlpha = (1 - fadeProg * (1 - 0.15)).toFixed(3);
+      siteTitle.style.color = `rgba(255,255,255,${textAlpha})`;
+
+      // ── pass 1: read — compute each row's earliest natural page Y ──
+      // offsetTop is layout-based and unaffected by transforms, so reads are stable.
+      const rowRefY = {};
+      allCards.forEach(card => {
+        const pageY = card.offsetTop + cols[card._colIdx].offsetTop + galTop;
+        if (rowRefY[card._row] === undefined || pageY < rowRefY[card._row]) {
+          rowRefY[card._row] = pageY;
+        }
+      });
+
+      // ── pass 2: write ──
+      allCards.forEach(card => {
+        const refNatViewY = rowRefY[card._row] - sy; // row's natural viewport Y
+
+        // cards well above the fold are settled — clear transform and opacity
+        if (refNatViewY < -vh * 0.5) {
+          card.style.transform = '';
+          card.style.opacity = '';
+          return;
+        }
+
+        // p: 0 = just born, 1 = fully settled at screen center
+        const ENTRY   = vh * 0.88; // card top visible at bottom 12% of screen at birth
+        const SETTLED = vh * 0.5;  // row fully placed when its top hits center
+        const p = Math.max(0, Math.min(1, (ENTRY - refNatViewY) / (ENTRY - SETTLED)));
+        const e = easeOut(p);
+
+        // vertical: born at birth line (ENTRY), arrives at natural position
+        // ty is near-zero throughout zone 3; negative for parked cards (pins them to ENTRY)
+        const ty = (ENTRY - refNatViewY) * (1 - e);
+
+        // horizontal: born at gallery center, fans out to column center
+        const dx = (card._colIdx - (colCount - 1) / 2) * colW;
+        const tx = -dx * (1 - e);
+
+        // rotation: random at birth → 0° by the bottom ⅓ of screen (vh * 0.67)
+        const ROT_END  = (ENTRY - vh * 0.67) / (ENTRY - SETTLED); // ≈ 0.55
+        const rotProg  = Math.max(0, Math.min(1, p / ROT_END));
+        const rotation = card._baseRot * (1 - easeOut(rotProg));
+
+        // scale: 0.6 at birth → 1.0 at center (p=1), stays 1.0 above
+        const scale = 0.6 + e * 0.4;
+
+        // opacity: 0.2 at birth → 1.0 when rotation completes
+        const opacity = 0.2 + easeOut(rotProg) * 0.8;
+        card.style.opacity = opacity.toFixed(3);
+
+        card.style.transform =
+          `translateX(${tx.toFixed(1)}px) ` +
+          `translateY(${ty.toFixed(1)}px) ` +
+          `rotate(${rotation.toFixed(2)}deg) ` +
+          `scale(${scale.toFixed(3)})`;
+      });
+
+      requestAnimationFrame(tick);
+    }
+
+    // ── scroll-driven loading ────────────────────────────────────────
+    const THRESHOLD = window.innerHeight * 1.5;
+
+    function checkFill() {
+      if (loaded >= queue.length) return;
+      if (document.body.offsetHeight < window.innerHeight + window.scrollY + THRESHOLD) {
+        loadBatch();
+      }
+    }
+
+    window.addEventListener('scroll', checkFill, { passive: true });
+
+    fetch('photos.json')
+      .then(r => r.json())
+      .then(photos => {
+        queue = seededShuffle(photos, Date.now());
+        loadBatch();
+      });
+
+    requestAnimationFrame(tick);
+  </script>
 </body>
 </html>
