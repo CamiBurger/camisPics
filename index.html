@@ -113,10 +113,9 @@
     }
 
     // ── column setup ─────────────────────────────────────────────────────
-    // 2.2 ≈ ultra-wide, 1.5 ≈ standard landscape, <1.5 = portrait → 2 columns
+    // 1.5 ≈ standard landscape → 3 columns, portrait → 2 columns
     function getColCount() {
-      const ratio = window.innerWidth / window.innerHeight;
-      return ratio >= 2.2 ? 4 : ratio >= 1.5 ? 3 : 2;
+      return window.innerWidth / window.innerHeight >= 1.5 ? 3 : 2;
     }
 
     let colCount = 0;
