@@ -250,6 +250,18 @@
       }, { once: true });
     }
 
+    function updateZoomRect() {
+      const overlayImg = document.querySelector('#zoom-overlay img');
+      if (!overlayImg || zoomAnimDir !== 0 || zoomProg !== 1) return;
+      zoomStartRect = zoomedCard.getBoundingClientRect();
+      const t = getZoomTargetRect();
+      overlayImg.style.transition = 'left .15s ease,top .15s ease,width .15s ease,height .15s ease';
+      overlayImg.style.left   = t.left   + 'px';
+      overlayImg.style.top    = t.top    + 'px';
+      overlayImg.style.width  = t.width  + 'px';
+      overlayImg.style.height = t.height + 'px';
+    }
+
     // ── batch loader ─────────────────────────────────────────────────────
     function loadBatch() {
       if (busy || loaded >= queue.length) return;
@@ -437,6 +449,19 @@
     }
 
     window.addEventListener('scroll', checkFill, { passive: true });
+
+    let _resizeTimer = null;
+    window.addEventListener('resize', () => {
+      clearTimeout(_resizeTimer);
+      _resizeTimer = setTimeout(() => {
+        const newCount = getColCount();
+        if (newCount !== colCount) {
+          setupColumns(newCount);
+          redistributeCards();
+        }
+        if (zoomedCard) updateZoomRect();
+      }, 120);
+    });
 
     // ── data fetching ─────────────────────────────────────────────────────
     fetch('blurb.json')
