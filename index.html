@@ -336,8 +336,13 @@
 
         if (refNatViewY < -vh * 0.5) {
           card.style.transform = '';
-          card.style.opacity   = '';
-          card.style.filter    = '';
+          if (zoomProg > 0 && zoomedCard && card !== zoomedCard) {
+            card.style.opacity = (1 - 0.55 * zoomProg).toFixed(3);
+            card.style.filter  = `blur(${(8 * zoomProg).toFixed(1)}px)`;
+          } else {
+            card.style.opacity = '';
+            card.style.filter  = '';
+          }
           return;
         }
 
